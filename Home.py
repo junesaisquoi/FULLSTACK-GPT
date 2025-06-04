@@ -22,3 +22,8 @@ Here are the apps I made:
 - [ ] [InvestorGPT](/InvestorGPT)
 """
 )
+
+
+
+# .\env\Scripts\Activate
+# streamlit run Home.py
