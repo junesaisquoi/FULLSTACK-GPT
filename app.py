@@ -1,8 +1,7 @@
-import os
-import pathlib
+import os, pathlib
 import streamlit as st
 from langchain.prompts import ChatPromptTemplate
-from langchain.document_loaders import UnstructuredFileLoader
+from langchain.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader
 from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.storage import LocalFileStore
