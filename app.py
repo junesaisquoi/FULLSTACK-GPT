@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import streamlit as st
 from langchain.prompts import ChatPromptTemplate
 from langchain.document_loaders import UnstructuredFileLoader
@@ -50,21 +52,22 @@ llm = ChatOpenAI(
 # Create or load a retriever from the uploaded file
 @st.cache_resource(show_spinner="Embedding file…")
 def embed_file(uploaded_file, key):
-    file_path = f"./.cache/files/{uploaded_file.name}"
+    save_dir = Path(".cache") / "files"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    file_path = save_dir / uploaded_file.name
     with open(file_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    docs = UnstructuredFileLoader(file_path).load_and_split(
+    docs = UnstructuredFileLoader(str(file_path)).load_and_split(
         CharacterTextSplitter.from_tiktoken_encoder(
             separator="\n", chunk_size=600, chunk_overlap=100
         )
     )
-
     embeddings = CacheBackedEmbeddings.from_bytes_store(
         OpenAIEmbeddings(openai_api_key=key),
-        LocalFileStore(f"./.cache/embeddings/{uploaded_file.name}"),
+        LocalFileStore(f".cache/embeddings/{uploaded_file.name}"),
     )
-
     return FAISS.from_documents(docs, embeddings).as_retriever()
 
 # Session-state helpers
