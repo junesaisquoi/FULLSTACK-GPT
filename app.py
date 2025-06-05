@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+import pathlib
 import streamlit as st
 from langchain.prompts import ChatPromptTemplate
 from langchain.document_loaders import UnstructuredFileLoader
@@ -52,22 +52,44 @@ llm = ChatOpenAI(
 # Create or load a retriever from the uploaded file
 @st.cache_resource(show_spinner="Embedding file…")
 def embed_file(uploaded_file, key):
-    save_dir = Path(".cache") / "files"
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    file_path = save_dir / uploaded_file.name
+    # 1) Make sure the local cache directory exists
+    files_dir = pathlib.Path("./.cache/files")
+    files_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2) Write the uploaded bytes to disk
+    file_path = files_dir / uploaded_file.name
     with open(file_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    docs = UnstructuredFileLoader(str(file_path)).load_and_split(
-        CharacterTextSplitter.from_tiktoken_encoder(
-            separator="\n", chunk_size=600, chunk_overlap=100
-        )
+    # 3) Choose a loader based on extension
+    suffix = uploaded_file.name.lower().split(".")[-1]
+    if suffix == "txt":
+        loader = TextLoader(str(file_path))
+    elif suffix == "pdf":
+        loader = PyPDFLoader(str(file_path))
+    elif suffix == "docx":
+        loader = Docx2txtLoader(str(file_path))
+    else:
+        raise ValueError(f"Unsupported file type: {uploaded_file.name}")
+
+    # 4) Load raw documents
+    raw_docs = loader.load()
+
+    # 5) Split into chunks with CharacterTextSplitter
+    text_splitter = CharacterTextSplitter.from_tiktoken_encoder(
+        separator="\n", chunk_size=600, chunk_overlap=100
     )
-    embeddings = CacheBackedEmbeddings.from_bytes_store(
+    docs = text_splitter.split_documents(raw_docs)
+
+    # 6) Create / load embeddings cache
+    store_dir = pathlib.Path(f"./.cache/embeddings/{uploaded_file.name}")
+    store_dir.parent.mkdir(parents=True, exist_ok=True)
+    embeddings = CacheBackedEmbeddings.from_byte_store(
         OpenAIEmbeddings(openai_api_key=key),
-        LocalFileStore(f".cache/embeddings/{uploaded_file.name}"),
+        LocalFileStore(str(store_dir)),
     )
+
+    # 7) Build a FAISS index and return a retriever
     return FAISS.from_documents(docs, embeddings).as_retriever()
 
 # Session-state helpers
