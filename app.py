@@ -83,7 +83,7 @@ def embed_file(uploaded_file, key):
     # 6) Create / load embeddings cache
     store_dir = pathlib.Path(f"./.cache/embeddings/{uploaded_file.name}")
     store_dir.parent.mkdir(parents=True, exist_ok=True)
-    embeddings = CacheBackedEmbeddings.from_byte_store(
+    embeddings = CacheBackedEmbeddings.from_bytes_store(
         OpenAIEmbeddings(openai_api_key=key),
         LocalFileStore(str(store_dir)),
     )
