@@ -150,7 +150,6 @@ pyarrow==13.0.0
 pycocotools==2.0.7
 pycparser==2.21
 pydantic==2.7.4
-pydantic_core==2.6.3
 pydeck==0.8.0
 pydub==0.25.1
 pyee==11.0.1
@@ -167,6 +166,7 @@ python-docx==0.8.11
 python-dotenv==1.0.0
 python-iso639==2023.6.15
 python-magic==0.4.27
+python-multipart>=0.0.7
 python-pptx==0.6.21
 pytube==11.0.2
 pytz==2023.3.post1
