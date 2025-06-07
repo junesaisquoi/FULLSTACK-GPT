@@ -1,14 +1,26 @@
-# Imports ──────────────────────────────────────────────────────────────
+# ──────────────────────────── 1. Imports ─────────────────────────────
 import json
-from langchain.document_loaders import UnstructuredFileLoader
-from langchain.text_splitter import CharacterTextSplitter
+import streamlit as st
+
+# LangChain core components
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.callbacks import StreamingStdOutCallbackHandler
-import streamlit as st
-from langchain.retrievers import WikipediaRetriever
+from langchain.text_splitter import CharacterTextSplitter
 from langchain.schema import BaseOutputParser
 
+# Community integrations (v0.2+)
+from langchain_community.document_loaders import UnstructuredFileLoader
+from langchain.retrievers import WikipediaRetriever
+# ─────────────────────── 2. Streamlit page config ────────────────────
+st.set_page_config(
+    page_title="QuizGPT",
+    page_icon="❓"
+)
+# ─────────────────────── 3. Basic page header ───────────────────────
+st.title("QuizGPT")
+
+# ─────────────────────── 4. Helpers & utilities ─────────────────────
 
 class JsonOutputParser(BaseOutputParser):
     def parse(self, text):
@@ -17,24 +29,20 @@ class JsonOutputParser(BaseOutputParser):
 
 output_parser = JsonOutputParser()
 
-# Page-wide Streamlit settings
-st.set_page_config(
-    page_title="QuizGPT",
-    page_icon="❓"
-)
+# Join a list of LangChain Documents into one big string for the LLM
+def format_docs(docs):
+    return "\n\n".join(document.page_content for document in docs)
 
-st.title("QuizGPT")
-
+# ─────────────────────── 5. LLM definition ──────────────────────────
 llm = ChatOpenAI(
-    temperature=0.1,
     model="gpt-3.5-turbo-1106",
+    temperature=0.1,
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()],
 )
 
-def format_docs(docs):
-    return "\n\n".join(document.page_content for document in docs)
-
+# ─────────────────────── 6. Prompt templates ────────────────────────
+# 6‑a.  Question‑generation prompt
 questions_prompt = ChatPromptTemplate.from_messages(
         [
             ("system", 
@@ -64,8 +72,10 @@ questions_prompt = ChatPromptTemplate.from_messages(
         ]
     )
 
+# Chain: context → prompt → llm
 questions_chain = {"context": format_docs} | questions_prompt | llm
 
+# 6‑b.  Formatting prompt (convert MCQs → JSON)
 formatting_prompt = ChatPromptTemplate.from_messages([
     ("system", 
      """
@@ -184,6 +194,7 @@ formatting_prompt = ChatPromptTemplate.from_messages([
 
 formatting_chain = formatting_prompt | llm
 
+# ─────────────────────── 7. File handling & caching ──────────────────
 # Build (and cache) a retriever from the uploaded file
 @st.cache_resource(show_spinner="Loading file…")
 def split_file(file):
@@ -201,7 +212,7 @@ def split_file(file):
     return docs
 
 
-
+# ─────────────────────── 8. Sidebar UI (source chooser) ──────────────
 with st.sidebar:
     docs = None
     choice = st.selectbox("Choose what you want to use.", (
@@ -221,7 +232,7 @@ with st.sidebar:
                 docs = retriever.get_relevant_documents(topic)
                 st.write(docs)
         
-
+# ─────────────────────── 9. Main panel UI / logic ────────────────────
 if not docs: 
     st.markdown(
         """
