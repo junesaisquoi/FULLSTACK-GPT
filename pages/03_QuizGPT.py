@@ -1,8 +1,9 @@
 # Imports ──────────────────────────────────────────────────────────────
-import streamlit as st
-from langchain.retrievers import WikipediaRetriever
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.text_splitter import CharacterTextSplitter
+from langchain.chat_models import ChatOpenAI
+import streamlit as st
+from langchain.retrievers import WikipediaRetriever
 
 # Page-wide Streamlit settings
 st.set_page_config(
@@ -11,6 +12,11 @@ st.set_page_config(
 )
 
 st.title("QuizGPT")
+
+llm = ChatOpenAI(
+    temperature=0.1,
+    model="gpt-3.5-turbo-1106",
+)
 
 # Build (and cache) a retriever from the uploaded file
 @st.cache_resource(show_spinner="Loading file…")
@@ -29,6 +35,7 @@ def split_file(file):
     return docs
 
 with st.sidebar:
+    docs = None
     choice = st.selectbox("Choose what you want to use.", (
         "File","Wikipedia Article"),)
 
@@ -47,9 +54,15 @@ with st.sidebar:
                 st.write(docs)
         
 
-st.markdown(
-    """
-    This app allows you to upload a document and generate quiz questions based on its content.
-    The questions can be used for educational purposes, such as testing knowledge or preparing for exams.
-    """
-)
+if not docs: 
+    st.markdown(
+        """
+        Welcome to QuizGPT!
+        This application allows you to generate quiz questions based on the content of a document or a Wikipedia article.
+        
+        Get started by uploading a document or searching for a topic on Wikipedia in the sidebar.
+        Once you have selected a source, you can generate quiz questions based on the content.
+        """
+    )
+else:
+    st.write(docs)
