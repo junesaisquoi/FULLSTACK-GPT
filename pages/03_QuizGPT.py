@@ -36,6 +36,7 @@ with st.sidebar:
         file = st.file_uploader("Upload a .docx, .txt, or .pdf file", type=["docx", "txt", "pdf"])
         if file:
             docs = split_file(file)
+            st.write(docs)
         
     else:
         topic = st.text_input("Search Wikipedia for a topic", placeholder="Enter a topic to search")
