@@ -2,6 +2,8 @@
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.callbacks import StreamingStdOutCallbackHandler
 import streamlit as st
 from langchain.retrievers import WikipediaRetriever
 
@@ -16,6 +18,8 @@ st.title("QuizGPT")
 llm = ChatOpenAI(
     temperature=0.1,
     model="gpt-3.5-turbo-1106",
+    streaming=True,
+    callbacks=[StreamingStdOutCallbackHandler()],
 )
 
 # Build (and cache) a retriever from the uploaded file
@@ -33,6 +37,9 @@ def split_file(file):
     )
     docs = loader.load_and_split(text_splitter=splitter)
     return docs
+
+def format_docs(docs):
+    return "\n\n".join(document.page_content for document in docs)
 
 with st.sidebar:
     docs = None
@@ -65,4 +72,38 @@ if not docs:
         """
     )
 else:
-    st.write(docs)
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", 
+             """
+             You are a helpful assistant that is role-playing as a teacher. 
+             Based ONLY on the following context, make 10 questions to test the user's knowledge about the text.
+             Each question should have 4 options, three of which must be incorrect and one should be correct.
+             Use (o) to signify the correct answer.
+             
+             Qeustion examples:
+             Question 1: What is the color of the ocean?
+             Answer: Red|Yellow|Blue (o)|Green
+             
+             Question 2: What is the capital of Georgia?
+             Answer: Baku|Tbilisi (o)|Manila|Beirut
+             
+             Question 3: When was Avatar released?
+             Answer: 2009 (o)|2010|2011|2008
+             
+             Question: Who was Julius Caesar?
+             Answer: A Roman general and statesman (o)|A Greek philosopher|A Chinese emperor|An Egyptian pharaoh
+             
+             Your turn!
+             
+             Context: {context}
+             """),
+        ]
+    )
+    
+    chain = {"context": format_docs} | prompt | llm
+    
+    start = st.button("Generate Quiz Questions")
+    
+    if start:
+        chain.invoke(docs)
