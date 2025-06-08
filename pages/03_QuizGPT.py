@@ -235,6 +235,7 @@ with st.sidebar:
             st.write(docs)
         
     else:
+        topic = None
         topic = st.text_input("Search Wikipedia for a topic", placeholder="Enter a topic to search")
         if topic:
             docs = wiki_search(topic)
@@ -252,8 +253,17 @@ if not docs:
         """
     )
 else:
-    start = st.button("Generate Quiz Questions")
-    
-    if start:
         response = run_quiz_chain(docs, topic if topic else file.name)
-        st.write(response)
+        with st.form("questions_form"):
+            for question in response["questions"]:
+                st.write(question["question"])
+                value = st.radio("Select the correct answer:", [answer["answer"] for answer in question["answers"]],
+                index=None
+                )
+                if ({"answer": value, "correct": True} in question["answers"]):
+                    st.success("Correct!")
+                elif value is not None:
+                    st.error("Incorrect, try again!")
+            button = st.form_submit_button("Submit Answers")
+            if button:
+                st.success("Your answers have been submitted!")
