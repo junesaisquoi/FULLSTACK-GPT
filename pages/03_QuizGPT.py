@@ -1,269 +1,196 @@
-# ──────────────────────────── 1. Imports ─────────────────────────────
+# ───────────────────────── 1 · Imports ──────────────────────────
 import json
 import streamlit as st
+from pathlib import Path
 
-# LangChain core components
+import os, hashlib
+
+# ── Unicode‑safe OpenAI headers ──
+import httpx
+
+def _utf8_header(value, encoding=None):
+    if isinstance(value, str):
+        return value.encode("utf-8")  # allow any Unicode
+    return value
+
+httpx._models._normalize_header_value = _utf8_header  # type: ignore
+
+# LangChain core
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.schema import BaseOutputParser
 
-# Community integrations (v0.2+)
+# Community integrations
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain.retrievers import WikipediaRetriever
+
 # ─────────────────────── 2. Streamlit page config ────────────────────
 st.set_page_config(
     page_title="QuizGPT",
     page_icon="❓"
 )
-# ─────────────────────── 3. Basic page header ───────────────────────
 st.title("QuizGPT")
+# ───────────────────── 3 · Sidebar controls ──────────────────────
+with st.sidebar:
+    st.markdown("### Data source & settings")
+    
+    # 3‑a · OpenAI API key (user‑supplied)
+    api_key = st.text_input("OpenAI API key", type="password")
+    
+    # 3‑b · Difficulty selector
+    difficulty = st.selectbox("Question difficulty", ("easy", "hard"))
+    
+    # 3‑c · Source type
+    source_type = st.selectbox("Choose source", ("File", "Wikipedia Article"))
 
-# ─────────────────────── 4. Helpers & utilities ─────────────────────
+    # 3‑d · Upload or Wiki topic
+    uploaded_file = None
+    wiki_topic = None
+    
+    if source_type == "File":
+        uploaded_file = st.file_uploader("Upload .docx / .txt / .pdf", ["docx", "txt", "pdf"])
+    else:
+        wiki_topic = st.text_input("Wikipedia topic")
 
-class JsonOutputParser(BaseOutputParser):
-    def parse(self, text):
-        text = text.replace("```", "").replace("json", "").strip()
-        return json.loads(text)
-
-output_parser = JsonOutputParser()
-
-# Join a list of LangChain Documents into one big string for the LLM
-def format_docs(docs):
-    return "\n\n".join(document.page_content for document in docs)
-
-# ─────────────────────── 5. LLM definition ──────────────────────────
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo-1106",
-    temperature=0.1,
-    streaming=True,
-    callbacks=[StreamingStdOutCallbackHandler()],
-)
-
-# ─────────────────────── 6. Prompt templates ────────────────────────
-# 6‑a.  Question‑generation prompt
-questions_prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", 
-             """
-             You are a helpful assistant that is role-playing as a teacher. 
-             Based ONLY on the following context, make 10 questions to test the user's knowledge about the text.
-             Each question should have 4 options, three of which must be incorrect and one should be correct.
-             Use (o) to signify the correct answer.
-             
-             Qeustion examples:
-             Question 1: What is the color of the ocean?
-             Answer: Red|Yellow|Blue (o)|Green
-             
-             Question 2: What is the capital of Georgia?
-             Answer: Baku|Tbilisi (o)|Manila|Beirut
-             
-             Question 3: When was Avatar released?
-             Answer: 2009 (o)|2010|2011|2008
-             
-             Question: Who was Julius Caesar?
-             Answer: A Roman general and statesman (o)|A Greek philosopher|A Chinese emperor|An Egyptian pharaoh
-             
-             Your turn!
-             
-             Context: {context}
-             """),
-        ]
-    )
-
-# Chain: context → prompt → llm
-questions_chain = {"context": format_docs} | questions_prompt | llm
-
-# 6‑b.  Formatting prompt (convert MCQs → JSON)
-formatting_prompt = ChatPromptTemplate.from_messages([
-    ("system", 
-     """
-     You are a powerful formatting algorithm that formats quiz questions and answers.
-     You format exam questions into a JSON format that can be used in a quiz application.
-     The options with (o) signify the correct answer.
-     Example Input:
-      Question: What is the color of the ocean?
-        Answers: Red|Yellow|Green|Blue(o)
-         
-        Question: What is the capital or Georgia?
-        Answers: Baku|Tbilisi(o)|Manila|Beirut
+    st.markdown("---")
+    st.markdown("[GitHub Repo](https://github.com/junesaisquoi/FULLSTACK-GPT)")
             
-        Question: When was Avatar released?
-        Answers: 2007|2001|2009(o)|1998
-            
-        Question: Who was Julius Caesar?
-        Answers: A Roman Emperor(o)|Painter|Actor|Model
-        
-        Example Output:
-        ```json
-        {{ "questions": [
-                {{
-                    "question": "What is the color of the ocean?",
-                    "answers": [
-                            {{
-                                "answer": "Red",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Yellow",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Green",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Blue",
-                                "correct": true
-                            }},
-                    ]
-                }},
-                            {{
-                    "question": "What is the capital or Georgia?",
-                    "answers": [
-                            {{
-                                "answer": "Baku",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Tbilisi",
-                                "correct": true
-                            }},
-                            {{
-                                "answer": "Manila",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Beirut",
-                                "correct": false
-                            }},
-                    ]
-                }},
-                            {{
-                    "question": "When was Avatar released?",
-                    "answers": [
-                            {{
-                                "answer": "2007",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "2001",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "2009",
-                                "correct": true
-                            }},
-                            {{
-                                "answer": "1998",
-                                "correct": false
-                            }},
-                    ]
-                }},
-                {{
-                    "question": "Who was Julius Caesar?",
-                    "answers": [
-                            {{
-                                "answer": "A Roman Emperor",
-                                "correct": true
-                            }},
-                            {{
-                                "answer": "Painter",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Actor",
-                                "correct": false
-                            }},
-                            {{
-                                "answer": "Model",
-                                "correct": false
-                            }},
-                    ]
-                }}
-            ]
-        }}
-    ```
-    Your turn!
+# ─────────────────────── 4. Helpers ─────────────────────
+# Combine many docs into one context string
+format_docs = lambda docs: "\n\n".join(d.page_content for d in docs)
 
-    Questions: {context}
-
-     """),
-])
-
-formatting_chain = formatting_prompt | llm
-
-# ─────────────────────── 7. File handling & caching ──────────────────
-# Build (and cache) a retriever from the uploaded file
-@st.cache_data(show_spinner="Loading file…")
+# Cache file splitting
+@st.cache_data(show_spinner="Loading file …")
 def split_file(file):
-    file_content = file.read()
-    file_path = f"./.cache/quiz_files/{file.name}"
-    with open(file_path, "wb") as f:
-        f.write(file_content)
-    loader = UnstructuredFileLoader(file_path)
+    path = Path(".cache/quiz_files") / file.name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(file.read())
+
+    loader = UnstructuredFileLoader(str(path))
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
         chunk_size=600,
         chunk_overlap=100,
     )
-    docs = loader.load_and_split(text_splitter=splitter)
-    return docs
+    return loader.load_and_split(text_splitter=splitter)
 
-@st.cache_data(show_spinner="Creating quizzes…")
-def run_quiz_chain(_docs, topic):
-    chain = {"context":questions_chain} | formatting_chain | output_parser
-    return chain.invoke(_docs)
-
-@st.cache_data(show_spinner="Searching Wikipedia...")
+# Cache Wikipedia search
+@st.cache_data(show_spinner="Searching Wikipedia …")
 def wiki_search(topic):
     retriever = WikipediaRetriever(top_k_results=5)
-    docs = retriever.get_relevant_documents(topic)
-    return docs
+    return retriever.get_relevant_documents(topic)
 
-# ─────────────────────── 8. Sidebar UI (source chooser) ──────────────
-with st.sidebar:
-    docs = None
-    choice = st.selectbox("Choose what you want to use.", (
-        "File","Wikipedia Article"),)
+# extract function-call JSON → dict
+from langchain.schema import AIMessage
 
-    if choice == "File":
-        file = st.file_uploader("Upload a .docx, .txt, or .pdf file", type=["docx", "txt", "pdf"])
-        if file:
-            docs = split_file(file)
-            st.write(docs)
-        
-    else:
-        topic = None
-        topic = st.text_input("Search Wikipedia for a topic", placeholder="Enter a topic to search")
-        if topic:
-            docs = wiki_search(topic)
-            
-        
-# ─────────────────────── 9. Main panel UI / logic ────────────────────
-if not docs: 
-    st.markdown(
-        """
-        Welcome to QuizGPT!
-        This application allows you to generate quiz questions based on the content of a document or a Wikipedia article.
-        
-        Get started by uploading a document or searching for a topic on Wikipedia in the sidebar.
-        Once you have selected a source, you can generate quiz questions based on the content.
-        """
-    )
+def extract_quiz(message: AIMessage):
+    args = message.additional_kwargs.get("function_call", {}).get("arguments", "{}")
+    return json.loads(args)
+
+# ───────────────────── 5 · Function‑calling setup ────────────────
+function_schema = {
+    "name": "create_quiz",
+    "description": "Generate quiz questions with answers.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "answers": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "answer": {"type": "string"},
+                                    "correct": {"type": "boolean"},
+                                },
+                                "required": ["answer", "correct"],
+                            },
+                        },
+                    },
+                    "required": ["question", "answers"],
+                },
+            }
+        },
+        "required": ["questions"],
+    },
+}
+
+# Dynamic LLM (uses user key if provided)
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo-1106",
+    temperature=0.3 if difficulty == "hard" else 0.1,
+    streaming=True,
+    callbacks=[StreamingStdOutCallbackHandler()],
+    openai_api_key=api_key or None,
+).bind(function_call={"name": "create_quiz"}, functions=[function_schema])
+
+# Prompt that includes difficulty request
+quiz_prompt = ChatPromptTemplate.from_template(
+    """
+    Based ONLY on the context below, create **10 {difficulty} multiple‑choice questions**. Each question
+    must have 4 options with exactly one correct answer (mark the correct option with (o)).
+    Context: {context}
+    """
+)
+
+quiz_chain = (
+    {"context": format_docs, "difficulty": lambda _: difficulty} | quiz_prompt | llm | extract_quiz
+)
+
+# ───────────────────── 6 · Prepare documents ───────────────────────
+docs = None
+if source_type == "File" and uploaded_file:
+    docs = split_file(uploaded_file)
+elif source_type == "Wikipedia Article" and wiki_topic:
+    docs = wiki_search(wiki_topic)
+
+    
+# ───────────────────── 7 · Quiz generation & display ───────────────
+if not docs:
+    st.info("Upload a file or enter a Wikipedia topic to start.")
 else:
-        response = run_quiz_chain(docs, topic if topic else file.name)
-        with st.form("questions_form"):
-            for question in response["questions"]:
-                st.write(question["question"])
-                value = st.radio("Select the correct answer:", [answer["answer"] for answer in question["answers"]],
-                index=None
-                )
-                if ({"answer": value, "correct": True} in question["answers"]):
-                    st.success("Correct!")
-                elif value is not None:
-                    st.error("Incorrect, try again!")
-            button = st.form_submit_button("Submit Answers")
-            if button:
-                st.success("Your answers have been submitted!")
+    # Keep quiz & answers in session so user can retry without re‑querying LLM
+    if "quiz_data" not in st.session_state:
+        st.session_state.quiz_data = None
+        st.session_state.attempts = 0
+
+    if st.session_state.quiz_data is None:
+        st.session_state.quiz_data = quiz_chain.invoke(docs)
+        st.session_state.attempts = 0
+
+    quiz = st.session_state.quiz_data
+
+    with st.form("quiz_form"):
+        score = 0
+        total = len(quiz["questions"])
+        for idx, q in enumerate(quiz["questions"], 1):
+            st.write(f"**Question {idx}:** {q['question']}")
+            options = [a["answer"] for a in q["answers"]]
+            choice = st.radio("", options, index=None, key=f"q{idx}")
+            # Evaluate immediately on submit
+            correct_ans = next(a["answer"] for a in q["answers"] if a["correct"])
+            if choice == correct_ans:
+                score += 1
+        submitted = st.form_submit_button("Submit Answers")
+
+    if submitted:
+        st.session_state.attempts += 1
+        if score == total:
+            st.success(f"Perfect! {score}/{total} 🎉")
+            st.balloons()
+            # Reset so a new quiz can be generated next time
+            st.session_state.quiz_data = None
+        else:
+            st.warning(f"You scored {score}/{total}. Try again!")
+            if st.button("Retake Quiz"):
+                # Clear stored answers and immediately rerun app
+                for i in range(1, total + 1):
+                    st.session_state.pop(f"q{i}", None)
+                import streamlit as _st; _st.experimental_rerun()
