@@ -1,4 +1,4 @@
-# ───────────────────────── 1 · Imports ──────────────────────────
+# ───────────────────────── 1 · Imports ──────────────────────────
 import json
 import streamlit as st
 from pathlib import Path
@@ -32,20 +32,25 @@ st.set_page_config(
     page_icon="❓"
 )
 st.title("QuizGPT")
-# ───────────────────── 3 · Sidebar controls ──────────────────────
+
+# ── Session-state initialisation (must precede first access) ──
+if "quiz_data" not in st.session_state:
+    st.session_state.quiz_data = None
+
+# ───────────────────── 3 · Sidebar controls ──────────────────────
 with st.sidebar:
     st.markdown("### Data source & settings")
     
-    # 3‑a · OpenAI API key (user‑supplied)
+    # 3‑a · OpenAI API key (user‑supplied)
     api_key = st.text_input("OpenAI API key", type="password")
     
-    # 3‑b · Difficulty selector
+    # 3‑b · Difficulty selector
     difficulty = st.selectbox("Question difficulty", ("easy", "hard"))
     
-    # 3‑c · Source type
+    # 3‑c · Source type
     source_type = st.selectbox("Choose source", ("File", "Wikipedia Article"))
 
-    # 3‑d · Upload or Wiki topic
+    # 3‑d · Upload or Wiki topic
     uploaded_file = None
     wiki_topic = None
     
@@ -89,7 +94,7 @@ def extract_quiz(message: AIMessage):
     args = message.additional_kwargs.get("function_call", {}).get("arguments", "{}")
     return json.loads(args)
 
-# ───────────────────── 5 · Function‑calling setup ────────────────
+# ───────────────────── 5 · Function‑calling setup ────────────────
 function_schema = {
     "name": "create_quiz",
     "description": "Generate quiz questions with answers.",
@@ -157,7 +162,7 @@ quiz_chain = (
     {"context": format_docs, "difficulty": lambda _: difficulty} | quiz_prompt | llm | extract_quiz
 )
 
-# ───────────────────── 6 · Prepare documents ───────────────────────
+# ───────────────────── 6 · Prepare documents ───────────────────────
 docs = None
 if source_type == "File" and uploaded_file:
     docs = split_file(uploaded_file)
@@ -165,14 +170,11 @@ elif source_type == "Wikipedia Article" and wiki_topic:
     docs = wiki_search(wiki_topic)
 
     
-# ───────────────────── 7 · Quiz generation & display ───────────────
+# ───────────────────── 7 · Quiz generation & display ───────────────
 if not docs:
     st.info("Upload a file or enter a Wikipedia topic to start.")
 else:
     # Cache quiz so user can retry without calling the LLM again
-    if "quiz_data" not in st.session_state:
-        st.session_state.quiz_data = None
-
     if st.session_state.quiz_data is None:
         st.session_state.quiz_data = quiz_chain.invoke(docs)
         # Clear any previous answers
