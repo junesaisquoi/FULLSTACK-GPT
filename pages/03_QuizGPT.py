@@ -55,7 +55,7 @@ with st.sidebar:
         wiki_topic = st.text_input("Wikipedia topic")
 
     st.markdown("---")
-    st.markdown("[GitHub Repo](https://github.com/junesaisquoi/FULLSTACK-GPT)")
+    st.markdown("[GitHub Repo](https://github.com/junesaisquoi/FULLSTACK-GPT/commit/d938bbe6a3eb771a5e5942d1b84eda35330268f5)")
             
 # ─────────────────────── 4. Helpers ─────────────────────
 # Combine many docs into one context string
@@ -122,14 +122,27 @@ function_schema = {
     },
 }
 
-# Dynamic LLM (uses user key if provided)
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo-1106",
-    temperature=0.3 if difficulty == "hard" else 0.1,
-    streaming=True,
-    callbacks=[StreamingStdOutCallbackHandler()],
-    openai_api_key=api_key or None,
-).bind(function_call={"name": "create_quiz"}, functions=[function_schema])
+# ───────────────────── 5 · LLM factory ──────────────────────────
+@st.cache_resource(show_spinner=False)
+def get_llm(key: str, level: str):
+    """Return a ChatOpenAI bound to the create_quiz function.
+    If no key provided yet, halt execution so the rest of the script
+    (which relies on `llm`) is not evaluated.
+    """
+    if not key:
+        st.info("Enter your OpenAI API key to enable quiz generation.")
+        st.stop()
+    return (
+        ChatOpenAI(
+            model="gpt-3.5-turbo-1106",
+            temperature=0.3 if level == "hard" else 0.1,
+            streaming=True,
+            openai_api_key=key,
+        ).bind(function_call={"name": "create_quiz"}, functions=[function_schema])
+    )
+
+# Build the LLM **before** it is referenced elsewhere
+llm = get_llm(api_key, difficulty)
 
 # Prompt that includes difficulty request
 quiz_prompt = ChatPromptTemplate.from_template(
@@ -156,41 +169,48 @@ elif source_type == "Wikipedia Article" and wiki_topic:
 if not docs:
     st.info("Upload a file or enter a Wikipedia topic to start.")
 else:
-    # Keep quiz & answers in session so user can retry without re‑querying LLM
+    # Cache quiz so user can retry without calling the LLM again
     if "quiz_data" not in st.session_state:
         st.session_state.quiz_data = None
-        st.session_state.attempts = 0
 
     if st.session_state.quiz_data is None:
         st.session_state.quiz_data = quiz_chain.invoke(docs)
-        st.session_state.attempts = 0
+        # Clear any previous answers
+        for k in list(st.session_state.keys()):
+            if k.startswith("q"):
+                st.session_state.pop(k)
 
     quiz = st.session_state.quiz_data
 
+    # ── Build the form with radios ──
     with st.form("quiz_form"):
-        score = 0
-        total = len(quiz["questions"])
         for idx, q in enumerate(quiz["questions"], 1):
             st.write(f"**Question {idx}:** {q['question']}")
             options = [a["answer"] for a in q["answers"]]
-            choice = st.radio("", options, index=None, key=f"q{idx}")
-            # Evaluate immediately on submit
-            correct_ans = next(a["answer"] for a in q["answers"] if a["correct"])
-            if choice == correct_ans:
-                score += 1
+            st.radio("", options, index=None, key=f"q{idx}")
         submitted = st.form_submit_button("Submit Answers")
 
+    # ── Feedback after submission ──
     if submitted:
-        st.session_state.attempts += 1
+        score = 0
+        total = len(quiz["questions"])
+        for idx, q in enumerate(quiz["questions"], 1):
+            user_ans = st.session_state.get(f"q{idx}")
+            correct_ans = next(a["answer"] for a in q["answers"] if a["correct"])
+            if user_ans == correct_ans:
+                st.success(f"Question {idx}: Correct ✓")
+                score += 1
+            else:
+                st.error(f"Question {idx}: Wrong ✗ — correct: {correct_ans}")
+        st.info(f"Your score: {score}/{total}")
+
+        # Perfect score ➜ balloons + new quiz next round
         if score == total:
-            st.success(f"Perfect! {score}/{total} 🎉")
             st.balloons()
-            # Reset so a new quiz can be generated next time
             st.session_state.quiz_data = None
         else:
-            st.warning(f"You scored {score}/{total}. Try again!")
+            # Retake button clears answers only
             if st.button("Retake Quiz"):
-                # Clear stored answers and immediately rerun app
-                for i in range(1, total + 1):
-                    st.session_state.pop(f"q{i}", None)
-                import streamlit as _st; _st.experimental_rerun()
+                for idx in range(1, total + 1):
+                    st.session_state.pop(f"q{idx}", None)
+                st.experimental_rerun()
