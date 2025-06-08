@@ -55,7 +55,7 @@ with st.sidebar:
         wiki_topic = st.text_input("Wikipedia topic")
 
     st.markdown("---")
-    st.markdown("[GitHub Repo](https://github.com/junesaisquoi/FULLSTACK-GPT/commit/d938bbe6a3eb771a5e5942d1b84eda35330268f5)")
+    st.markdown("[GitHub Repo](https://github.com/junesaisquoi/FULLSTACK-GPT)")
             
 # ─────────────────────── 4. Helpers ─────────────────────
 # Combine many docs into one context string
