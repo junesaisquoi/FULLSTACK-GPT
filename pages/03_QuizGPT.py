@@ -64,7 +64,7 @@ prompt = PromptTemplate.from_template(
     
     Each question should have 4 answers, three of them must be incorrect and one should be correct.
 
-    The difficulty level of the problem is '{level}'.
+    The difficulty level of the problem is '{difficulty}'.
 
     Context: {context}
 """
@@ -123,7 +123,7 @@ with st.sidebar:
         if topic:
             docs = wiki_search(topic)
     st.markdown("---")
-    level = st.selectbox("Quiz Level", ("EASY", "HRAD"))
+    difficulty = st.selectbox("Quiz Level", ("EASY", "HRAD"))
     st.markdown("---")
     st.write("Github: https://github.com/junesaisquoi/FULLSTACK-GPT")
 
@@ -157,7 +157,7 @@ else:
             ],
         )
 
-        response = run_quiz_chain(docs, topic if topic else file.name, level)
+        response = run_quiz_chain(docs, topic if topic else file.name, difficulty)
         response = response.additional_kwargs["function_call"]["arguments"]
 
         with st.form("questions_form"):
