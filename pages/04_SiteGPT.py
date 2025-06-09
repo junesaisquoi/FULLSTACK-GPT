@@ -24,7 +24,7 @@ def load_website(url):
                                ],
                            )
     loader.requests_per_second = 1
-    docs = loader.load_and_split()
+    docs = loader.load_and_split(text_splitter=splitter)
     st.write(docs)
     return docs
 
