@@ -1,30 +1,15 @@
 # ───────────────────────── 1 · Imports ──────────────────────────
-import json
-import streamlit as st
 from pathlib import Path
+import streamlit as st
+from langchain.retrievers import WikipediaRetriever
 
-import os, hashlib
-
-# ── Unicode‑safe OpenAI headers ──
-import httpx
-
-def _utf8_header(value, encoding=None):
-    if isinstance(value, str):
-        return value.encode("utf-8")  # allow any Unicode
-    return value
-
-httpx._models._normalize_header_value = _utf8_header  # type: ignore
-
-# LangChain core
+from langchain.document_loaders import UnstructuredFileLoader
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import PromptTemplate
 from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.schema import BaseOutputParser
-
-# Community integrations
-from langchain_community.document_loaders import UnstructuredFileLoader
-from langchain.retrievers import WikipediaRetriever
+from pathlib import Path
+import json
 
 # ─────────────────────── 2. Streamlit page config ────────────────────
 st.set_page_config(
@@ -33,55 +18,13 @@ st.set_page_config(
 )
 st.title("QuizGPT")
 
-# ── Session‑state initialisation (must happen before any access) ──
-st.session_state.setdefault("quiz_data", None)
+def format_docs(docs):
+    return "\n\n".join(document.page_content for document in docs)
 
-# ───────────────────── 3 · Sidebar controls ──────────────────────
-with st.sidebar:
-    st.markdown("### Data source & settings")
-
-    api_key = st.text_input("OpenAI API key", type="password")
-    difficulty = st.selectbox("Question difficulty", ("easy", "hard"))
-    source_type = st.selectbox("Choose source", ("File", "Wikipedia Article"))
-
-    uploaded_file = wiki_topic = None
-    if source_type == "File":
-        uploaded_file = st.file_uploader("Upload .docx / .txt / .pdf", ["docx", "txt", "pdf"])
-    else:
-        wiki_topic = st.text_input("Wikipedia topic")
-
-    st.markdown("---")
-    st.markdown("[GitHub Repo](https://github.com/junesaisquoi/FULLSTACK-GPT)")
-
-# ─────────────────────── 4. Helpers ─────────────────────
-format_docs = lambda docs: "\n\n".join(d.page_content for d in docs)
-
-@st.cache_data(show_spinner="Loading file …")
-def split_file(file):
-    path = Path(".cache/quiz_files") / file.name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(file.read())
-    loader = UnstructuredFileLoader(str(path))
-    splitter = CharacterTextSplitter.from_tiktoken_encoder(
-        separator="\n", chunk_size=600, chunk_overlap=100,
-    )
-    return loader.load_and_split(text_splitter=splitter)
-
-@st.cache_data(show_spinner="Searching Wikipedia …")
-def wiki_search(topic):
-    retriever = WikipediaRetriever(top_k_results=5)
-    return retriever.get_relevant_documents(topic)
-
-from langchain.schema import AIMessage
-
-def extract_quiz(message: AIMessage):
-    args = message.additional_kwargs.get("function_call", {}).get("arguments", "{}")
-    return json.loads(args)
-
-# ───────────────────── 5 · Function‑calling setup ────────────────
-function_schema = {
+# ───────────────────── 3. Function‑calling setup ────────────────
+function = {
     "name": "create_quiz",
-    "description": "Generate quiz questions with answers.",
+    "description": "function that takes a list of questions and answers and returns a quiz",
     "parameters": {
         "type": "object",
         "properties": {
@@ -111,82 +54,130 @@ function_schema = {
     },
 }
 
-# ───────────────────── 5 · LLM factory ──────────────────────────
-@st.cache_resource(show_spinner=False)
-def get_llm(key: str, level: str):
-    if not key:
-        st.info("Enter your OpenAI API key to enable quiz generation.")
-        st.stop()
-    return ChatOpenAI(
-        model="gpt-3.5-turbo-1106",
-        temperature=0.3 if level == "hard" else 0.1,
-        streaming=True,
-        openai_api_key=key,
-    ).bind(function_call={"name": "create_quiz"}, functions=[function_schema])
 
-llm = get_llm(api_key, difficulty)
+# ───────────────────── 3. Prompt ──────────────────────────
+prompt = PromptTemplate.from_template(
+    """
+    You are a helpful assistant that is role playing as a teacher.
+                    
+    Based ONLY on the following context make 5 questions to test the user's knowledge about the text.
+    
+    Each question should have 4 answers, three of them must be incorrect and one should be correct.
 
-quiz_prompt = ChatPromptTemplate.from_template(
-    """Based ONLY on the context below, create **10 {difficulty} multiple‑choice questions**. Each question must have 4 options with exactly one correct answer (mark the correct option with (o)).\nContext: {context}"""
+    The difficulty level of the problem is '{level}'.
+
+    Context: {context}
+"""
 )
 
-quiz_chain = ({"context": format_docs, "difficulty": lambda _: difficulty} | quiz_prompt | llm | extract_quiz)
+@st.cache_data(show_spinner="Loading file...")
+def split_file(file):
+    file_content = file.read()
+    file_path = f"./.cache/quiz_files/{file.name}"
+    Path("./.cache/quiz_files").mkdir(parents=True, exist_ok=True)
+    with open(file_path, "wb+") as f:
+        f.write(file_content)
+    splitter = CharacterTextSplitter.from_tiktoken_encoder(
+        separator="\n",
+        chunk_size=600,
+        chunk_overlap=100,
+    )
+    loader = UnstructuredFileLoader(f"{file_path}")
+    docs = loader.load_and_split(text_splitter=splitter)
+    return docs
 
-# ───────────────────── 6 · Prepare documents ───────────────────────
-docs = None
-if source_type == "File" and uploaded_file:
-    docs = split_file(uploaded_file)
-elif source_type == "Wikipedia Article" and wiki_topic:
-    docs = wiki_search(wiki_topic)
+st.cache_data(show_spinner="Creating quiz...")
+def run_quiz_chain(_docs, topic, difficulty):
+    chain = prompt | llm
+    return chain.invoke({"context": _docs, "difficulty": difficulty})
 
-# ───────────────────── 7 · Quiz generation & display ───────────────
-if not docs:
-    st.info("Upload a file or enter a Wikipedia topic to start.")
-    st.stop()
+@st.cache_data(show_spinner="Creating Wiki...")
+def wiki_search(term):
+    retriever = WikipediaRetriever(top_k_results=2)
+    docs = retriever.get_relevant_documents(term)
+    return docs
 
-# --------------------- generate / fetch quiz -----------------------
-if st.session_state.get("quiz_data") is None:
-    try:
-        st.session_state["quiz_data"] = quiz_chain.invoke(docs)
-    except Exception as e:
-        st.error(f"Quiz generation failed: {e}")
-        st.stop()
+# ───────────────────── 3 · Sidebar controls ──────────────────────
+with st.sidebar:
+    docs = None
+    topic = None
+    openai_api_key = st.text_input("Input your OpenAI API Key")
+    st.markdown("---")
+    choice = st.selectbox(
+        "Choose what you want to use",
+        (
+            "File",
+            "Wikipedia Article",
+        ),
+    )
 
-quiz = st.session_state.get("quiz_data")
+    if choice == "File":
+        file = st.file_uploader(
+            "Upload a .docx, .txt or .pdf file.", type=["pdf", "txt", "docx"]
+        )
+        if file:
+            docs = split_file(file)
 
-# Guard against empty or malformed response
-if not quiz or "questions" not in quiz:
-    st.error("Quiz data is empty. Please check your OpenAI API key and try again.")
-    st.session_state["quiz_data"] = None
-    st.stop()
-
-# ── Build the form with radios ──
-with st.form("quiz_form"):
-    for idx, q in enumerate(quiz["questions"], 1):
-        st.write(f"**Question {idx}:** {q['question']}")
-        options = [a["answer"] for a in q["answers"]]
-        st.radio("", options, index=None, key=f"q{idx}")
-    submitted = st.form_submit_button("Submit Answers")
-
-# ── Feedback after submission ──
-if submitted:
-    score = 0
-    total = len(quiz["questions"])
-    for idx, q in enumerate(quiz["questions"], 1):
-        user_ans = st.session_state.get(f"q{idx}")
-        correct_ans = next(a["answer"] for a in q["answers"] if a["correct"])
-        if user_ans == correct_ans:
-            st.success(f"Question {idx}: Correct ✓")
-            score += 1
-        else:
-            st.error(f"Question {idx}: Wrong ✗ — correct: {correct_ans}")
-    st.info(f"Your score: {score}/{total}")
-
-    if score == total:
-        st.balloons()
-        st.session_state["quiz_data"] = None
     else:
-        if st.button("Retake Quiz"):
-            for idx in range(1, total + 1):
-                st.session_state.pop(f"q{idx}", None)
-            st.experimental_rerun()
+        topic = st.text_input("Search Wikipedia...")
+        if topic:
+            docs = wiki_search(topic)
+    st.markdown("---")
+    level = st.selectbox("Quiz Level", ("EASY", "HRAD"))
+    st.markdown("---")
+    st.write("Github: https://github.com/junesaisquoi/FULLSTACK-GPT")
+
+if not docs:
+    st.markdown(
+        """
+    Welcome to QuizGPT.
+                
+    I will make a quiz from Wikipedia articles or files you upload to test your knowledge and help you study.
+                
+    Get started by uploading a file or searching on Wikipedia in the sidebar.
+    """
+    )
+else:
+    if not openai_api_key:
+        st.error("Please input your OpenAI API Key on the sidebar")
+    else:
+        llm = ChatOpenAI(
+            temperature=0.1,
+            streaming=True,
+            callbacks=[
+                StreamingStdOutCallbackHandler(),
+            ],
+            openai_api_key=openai_api_key,
+        ).bind(
+            function_call={
+                "name": "create_quiz",
+            },
+            functions=[
+                function,
+            ],
+        )
+
+        response = run_quiz_chain(docs, topic if topic else file.name, level)
+        response = response.additional_kwargs["function_call"]["arguments"]
+
+        with st.form("questions_form"):
+            questions = json.loads(response)["questions"]
+            question_count = len(questions)
+            success_count = 0
+            for idx, question in enumerate(questions):
+                st.markdown(f'#### {idx+1}. {question["question"]}')
+                value = st.radio(
+                    "Select an option.",
+                    [answer["answer"] for answer in question["answers"]],
+                    index=None,
+                )
+
+                if {"answer": value, "correct": True} in question["answers"]:
+                    st.success("Correct!")
+                    success_count += 1
+                elif value is not None:
+                    st.error("Wrong!")
+            if question_count == success_count:
+                st.balloons()
+
+            button = st.form_submit_button()
