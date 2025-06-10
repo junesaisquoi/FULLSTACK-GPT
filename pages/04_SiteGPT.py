@@ -1,16 +1,65 @@
-from langchain.document_loaders import SitemapLoader
-from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
+# 1. Imports
+import streamlit as st
+from pathlib import Path
+
+from langchain_community.document_loaders import SitemapLoader
+from langchain.schema.runnable import (
+    RunnableLambda,
+    RunnablePassthrough,
+    RunnableParallel,
+)
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
-import streamlit as st
 
-llm = ChatOpenAI(
-    temperature=0.1,
+def parse_page(soup):
+    for tag in ("header", "footer"):
+        el = soup.find(tag)
+        if el:
+            el.decompose()
+    return soup.get_text(" ", strip=True)
+
+# 2. Streamlit config
+
+st.set_page_config(
+    page_title="SiteGPT",
+    page_icon="🖥️",
 )
 
+# 3 Sidebar – key + sitemap URL
+DEFAULT_URL = "https://developers.cloudflare.com/sitemap.xml"
+
+with st.sidebar:
+    openai_api_key = st.text_input(
+        "Input your OpenAI API Key",
+        type="password",
+        placeholder="Your OpenAI API Key",
+    )
+    st.markdown("---")
+    url = st.text_input(
+        "Cloudflare sitemap URL",
+        value=DEFAULT_URL,
+    )
+    if ".xml" not in url:
+        st.error("Please write down a Sitemap URL ending in .xml.")
+        st.stop()
+    st.markdown("---")
+    st.write("GitHub: https://github.com/junesaisquoi/FULLSTACK-GPT")
+
+# Stop if no key
+if not openai_api_key:
+    st.warning("Please input your OpenAI API Key in the sidebar to start.")
+    st.stop()    
+
+# 4 LLM and embeddings
+llm = ChatOpenAI(
+    temperature=0.1,
+    openai_api_key=openai_api_key,
+    max_tokens=500)
+embedding_fn = OpenAIEmbeddings(openai_api_key=openai_api_key)
+
+# 5 Prompts
 answers_prompt = ChatPromptTemplate.from_template(
     """
     Using ONLY the following context answer the user's question. If you can't just say you don't know, don't make anything up.
@@ -39,32 +88,6 @@ answers_prompt = ChatPromptTemplate.from_template(
 """
 )
 
-
-def get_answers(inputs):
-    docs = inputs["docs"]
-    question = inputs["question"]
-    answers_chain = answers_prompt | llm
-    # answers = []
-    # for doc in docs:
-    #     result = answers_chain.invoke(
-    #         {"question": question, "context": doc.page_content}
-    #     )
-    #     answers.append(result.content)
-    return {
-        "question": question,
-        "answers": [
-            {
-                "answer": answers_chain.invoke(
-                    {"question": question, "context": doc.page_content}
-                ).content,
-                "source": doc.metadata["source"],
-                "date": doc.metadata["lastmod"],
-            }
-            for doc in docs
-        ],
-    }
-
-
 choose_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -83,93 +106,95 @@ choose_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+# 6 Helper runnables
+def get_answers(inputs: dict) -> dict:
+    docs     = inputs["docs"]
+    question = inputs["question"]
+    answers_chain = answers_prompt | llm
 
-def choose_answer(inputs):
-    answers = inputs["answers"]
+    results = []
+    for doc in docs:
+        raw = answers_chain.invoke(
+            {"question": question, "context": doc.page_content}
+        ).content
+        score = 0
+        if "Score:" in raw:
+            try:
+                score = int(raw.split("Score:")[1].split()[0])
+            except ValueError:
+                pass
+        results.append(
+            {
+                "answer": raw,
+                "score":  score,
+                "source": doc.metadata.get("source", "unknown"),
+                "date":   doc.metadata.get("lastmod", "unknown"),
+            }
+        )
+    return {"question": question, "answers": results}
+
+def choose_answer(inputs: dict):
+    answers  = inputs["answers"]
     question = inputs["question"]
     choose_chain = choose_prompt | llm
     condensed = "\n\n".join(
-        f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"
-        for answer in answers
+        f"{a['answer']}\nSource:{a['source']}\nDate:{a['date']}\nScore:{a['score']}"
+        for a in answers
     )
-    return choose_chain.invoke(
-        {
-            "question": question,
-            "answers": condensed,
-        }
-    )
+    return choose_chain.invoke({"question": question, "answers": condensed})
 
+# 7 Docs loader + retriever
+def build_retriever(sitemap_url: str):
+    loader_kwargs = {"parsing_function": parse_page}
 
-def parse_page(soup):
-    header = soup.find("header")
-    footer = soup.find("footer")
-    if header:
-        header.decompose()
-    if footer:
-        footer.decompose()
-    return (
-        str(soup.get_text())
-        .replace("\n", " ")
-        .replace("\xa0", " ")
-        .replace("CloseSearch Submit Blog", "")
-    )
+    # only filter when the user left the field at the default value
+    if sitemap_url.strip() == DEFAULT_URL:
+        loader_kwargs["filter_urls"] = [
+            r"^https://developers\.cloudflare\.com/ai-gateway/.*",
+            r"^https://developers\.cloudflare\.com/vectorize/.*",
+            r"^https://developers\.cloudflare\.com/workers-ai/.*",
+        ]
 
-
-@st.cache_resource(show_spinner="Loading website...")
-def load_website(url):
-    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=1000,
-        chunk_overlap=200,
-    )
-    loader = SitemapLoader(
-        url,
-        parsing_function=parse_page,
-    )
+    # otherwise custom sitemap → no filter_urls
+    loader = SitemapLoader(sitemap_url, **loader_kwargs)
     loader.requests_per_second = 2
+
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=500, chunk_overlap=100
+    )
     docs = loader.load_and_split(text_splitter=splitter)
-    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
-    return vector_store.as_retriever()
+    store = FAISS.from_documents(docs, embedding_fn)
+    return store.as_retriever(search_kwargs={"k": 3})
 
+retriever = build_retriever(url)
 
-st.set_page_config(
-    page_title="SiteGPT",
-    page_icon="🖥️",
-)
-
-
+# 8 Chat UI
 st.markdown(
     """
-    # SiteGPT
-            
-    Ask questions about the content of a website.
-            
-    Start by writing the URL of the website on the sidebar.
-"""
+    # Cloudflare SiteGPT
+
+    🔍 Enter your OpenAI API key and (optionally) a sitemap URL in the sidebar  
+    ✔️ By default, this indexes **Cloudflare’s AI Gateway**, **Vectorize** & **Workers AI** docs  
+    💬 Then type any question below to get precise, scored answers with source links!
+    """
 )
 
 
-with st.sidebar:
-    url = st.text_input(
-        "Write down a URL",
-        placeholder="https://example.com",
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).markdown(msg["content"])
+
+if user_q := st.chat_input("Ask…"):
+    st.session_state.messages.append({"role": "user", "content": user_q})
+    st.chat_message("user").markdown(user_q)
+
+    chain = (
+        RunnableParallel(docs=retriever, question=RunnablePassthrough())
+        | RunnableLambda(get_answers)
+        | RunnableLambda(choose_answer)
     )
-
-
-if url:
-    if ".xml" not in url:
-        with st.sidebar:
-            st.error("Please write down a Sitemap URL.")
-    else:
-        retriever = load_website(url)
-        query = st.text_input("Ask a question to the website.")
-        if query:
-            chain = (
-                {
-                    "docs": retriever,
-                    "question": RunnablePassthrough(),
-                }
-                | RunnableLambda(get_answers)
-                | RunnableLambda(choose_answer)
-            )
-            result = chain.invoke(query)
-            st.markdown(result.content.replace("$", "\$"))
+    reply = chain.invoke(user_q).content
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.chat_message("assistant").markdown(reply.replace("$", r"\$"))
