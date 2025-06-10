@@ -3,14 +3,15 @@ import streamlit as st
 from pathlib import Path
 
 from langchain_community.document_loaders import SitemapLoader
+from langchain_community.vectorstores import FAISS            # ← use community vectorstores
 from langchain.schema.runnable import (
     RunnableLambda,
     RunnablePassthrough,
     RunnableParallel,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores.faiss import FAISS
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
 
 def parse_page(soup):
@@ -21,7 +22,6 @@ def parse_page(soup):
     return soup.get_text(" ", strip=True)
 
 # 2. Streamlit config
-
 st.set_page_config(
     page_title="SiteGPT",
     page_icon="🖥️",
@@ -47,6 +47,8 @@ with st.sidebar:
     st.markdown("---")
     st.write("GitHub: https://github.com/junesaisquoi/FULLSTACK-GPT")
 
+url = url.split("#", 1)[0].strip()
+
 # Stop if no key
 if not openai_api_key:
     st.warning("Please input your OpenAI API Key in the sidebar to start.")
@@ -56,8 +58,19 @@ if not openai_api_key:
 llm = ChatOpenAI(
     temperature=0.1,
     openai_api_key=openai_api_key,
-    max_tokens=500)
-embedding_fn = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    max_tokens=500,
+)
+
+class BatchedOpenAIEmbeddings(OpenAIEmbeddings):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        BATCH = 50
+        out: list[list[float]] = []
+        for i in range(0, len(texts), BATCH):
+            chunk = texts[i : i + BATCH]
+            out.extend(super().embed_documents(chunk))
+        return out
+
+embedding_fn = BatchedOpenAIEmbeddings(openai_api_key=openai_api_key)
 
 # 5 Prompts
 answers_prompt = ChatPromptTemplate.from_template(
@@ -163,7 +176,24 @@ def build_retriever(sitemap_url: str):
         chunk_size=500, chunk_overlap=100
     )
     docs = loader.load_and_split(text_splitter=splitter)
-    store = FAISS.from_documents(docs, embedding_fn)
+
+    texts     = [doc.page_content for doc in docs]
+    metadatas = [doc.metadata         for doc in docs]
+    all_embs  = []
+    BATCH     = 50
+
+    for i in range(0, len(texts), BATCH):
+        batch_texts = texts[i : i + BATCH]
+        batch_embs  = embedding_fn.embed_documents(batch_texts)
+        all_embs.extend(batch_embs)
+
+    text_and_embs = list(zip(texts, all_embs))
+    store = FAISS.from_embeddings(
+        text_embeddings=text_and_embs,
+        metadatas=metadatas,
+        embedding=embedding_fn,
+    )
+
     return store.as_retriever(search_kwargs={"k": 3})
 
 retriever = build_retriever(url)
