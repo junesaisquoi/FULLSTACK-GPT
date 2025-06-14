@@ -21,7 +21,7 @@ def transcribe_chunks(chunk_folder, destination):
             file=audio_file,
             language="en"
             )
-        text_file.write(transcript.text)
+            text_file.write(transcript.text)
 
 @st.cache_data()        
 def extract_audio_from_video(video_path):
@@ -68,15 +68,27 @@ with st.sidebar:
 
 if video:
     chunks_folder = "./.cache/chunks"
-    video_content = video.read()
-    video_path = f"./.cache/{video.name}"
-    audio_path = video_path.replace(".mp4", ".mp3")
-    transcript_path = video_path.replace(".mp4", ".txt")
-    with open(video_path, "wb") as f:
-        f.write(video_content)
-    with st.status("Extracting audio from video..."):
+    with st.status("Loading video...") as status:
+        video_content = video.read()
+        video_path = f"./.cache/{video.name}"
+        audio_path = video_path.replace(".mp4", ".mp3")
+        transcript_path = video_path.replace(".mp4", ".txt")
+        with open(video_path, "wb") as f:
+            f.write(video_content)
+        status.update(label="Extracting audio...")
         extract_audio_from_video(video_path)
-    with st. status("Cutting audio into chunks..."):
+        status.update(label="Cutting audio into chunks...")
         cut_audio_in_chunks(audio_path, 10, "./.cache/chunks")
-    with st.status("Transcribing audio chunks..."):
+        status.update(label="Transcribing audio chunks...")
         transcribe_chunks(chunks_folder, transcript_path)
+        
+        transcript_tab, summary_tab, qa_tab = st.tabs(
+            ["Transcript",
+            "Summary",
+            "Q&A"
+            ]
+        )
+        
+        with transcript_tab:
+            with open(transcript_path, "r") as file:
+                st.write(file.read())
