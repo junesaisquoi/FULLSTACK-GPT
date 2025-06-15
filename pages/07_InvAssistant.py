@@ -1,4 +1,4 @@
-# InvAssistant.py (Alpha Vantage Version - Corrected)
+# InvAssistant.py (Alpha Vantage Version)
 
 import streamlit as st
 import os
@@ -11,7 +11,7 @@ import requests
 load_dotenv()
 
 # Alpha Vantage API Key from .env or Streamlit secrets
-alpha_vantage_api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+alpha_vantage_api_key = "ALPHA_VANTAGE_API_KEY"
 
 # Streamlit UI setup
 st.set_page_config(page_title="Investor Assistant", page_icon="📈")
@@ -70,56 +70,50 @@ def get_daily_stock_performance(inputs):
         return {"error": "No stock price data found."}
 
 # Define tools/functions for OpenAI assistant
+
 tools = [
     {
         "type": "function",
-        "function": {
-            "name": "get_ticker",
-            "description": "Get ticker symbol from company name",
-            "parameters": {
-                "type": "object",
-                "properties": {"company_name": {"type": "string"}},
-                "required": ["company_name"]
-            }
+        "name": "get_ticker",
+        "description": "Get ticker symbol from company name",
+        "parameters": {
+            "type": "object",
+            "properties": {"company_name": {"type": "string"}},
+            "required": ["company_name"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_income_statement",
-            "description": "Get income statement data for ticker",
-            "parameters": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"]
-            }
+        "name": "get_income_statement",
+        "description": "Get income statement data for ticker",
+        "parameters": {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_balance_sheet",
-            "description": "Get balance sheet data for ticker",
-            "parameters": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"]
-            }
+        "name": "get_balance_sheet",
+        "description": "Get balance sheet data for ticker",
+        "parameters": {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_daily_stock_performance",
-            "description": "Get daily stock price data",
-            "parameters": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"]
-            }
+        "name": "get_daily_stock_performance",
+        "description": "Get daily stock price data",
+        "parameters": {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"]
         }
     }
 ]
+
 
 # Streamlit chat logic
 if "messages" not in st.session_state:
@@ -128,7 +122,7 @@ if "messages" not in st.session_state:
     ]
 
 if "assistant_id" not in st.session_state:
-    assistant = client.beta.assistants.create(
+    assistant = client.assistants.create(
         name="Investor Assistant",
         instructions="You analyze companies and recommend whether to invest or not based on financials and stock performance.",
         model="gpt-4o-mini",
@@ -137,7 +131,7 @@ if "assistant_id" not in st.session_state:
     st.session_state.assistant_id = assistant.id
 
 if "thread_id" not in st.session_state:
-    thread = client.beta.threads.create()
+    thread = client.threads.create()
     st.session_state.thread_id = thread.id
 
 st.title("📊Investor Assistant")
@@ -151,19 +145,19 @@ if user_input := st.chat_input("Ask me about any company"):
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    client.beta.threads.messages.create(
+    client.threads.messages.create(
         thread_id=st.session_state.thread_id,
         role="user",
         content=user_input
     )
 
-    run = client.beta.threads.runs.create(
+    run = client.threads.runs.create(
         thread_id=st.session_state.thread_id,
         assistant_id=st.session_state.assistant_id
     )
 
     while True:
-        run_status = client.beta.threads.runs.retrieve(
+        run_status = client.threads.runs.retrieve(
             thread_id=st.session_state.thread_id,
             run_id=run.id
         )
@@ -174,7 +168,7 @@ if user_input := st.chat_input("Ask me about any company"):
             for tool_call in tool_calls:
                 function_name = tool_call.function.name
                 arguments = json.loads(tool_call.function.arguments)
-
+                
                 if function_name == "get_ticker":
                     output = get_ticker(arguments)
                 elif function_name == "get_income_statement":
@@ -191,7 +185,7 @@ if user_input := st.chat_input("Ask me about any company"):
                     "output": json.dumps(output)
                 })
 
-            client.beta.threads.runs.submit_tool_outputs(
+            client.threads.runs.submit_tool_outputs(
                 thread_id=st.session_state.thread_id,
                 run_id=run.id,
                 tool_outputs=tool_outputs
@@ -199,7 +193,7 @@ if user_input := st.chat_input("Ask me about any company"):
         elif run_status.status == "completed":
             break
 
-    messages = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
+    messages = client.threads.messages.list(thread_id=st.session_state.thread_id)
     response = messages.data[0].content[0].text.value
     st.session_state.messages.append({"role": "assistant", "content": response})
     with st.chat_message("assistant"):
