@@ -1,107 +1,121 @@
+# InvAssistant.py (Alpha Vantage Version)
+
 import streamlit as st
 import os
-import json
-import requests
 from openai import OpenAI
 from dotenv import load_dotenv
+import json
+import requests
 
-# Load environment variables (optional local dev)
+# Load environment variables
 load_dotenv()
 
-# API keys
-openai_api_key = os.getenv("OPENAI_API_KEY")
-alpha_vantage_api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+# Alpha Vantage API Key from .env or Streamlit secrets
+alpha_vantage_api_key = "ALPHA_VANTAGE_API_KEY"
 
-# Streamlit UI
+# Streamlit UI setup
 st.set_page_config(page_title="Investor Assistant", page_icon="📈")
 
 with st.sidebar:
-    if not openai_api_key:
-        openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
+    openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
     st.write("GitHub: https://github.com/junesaisquoi/FULLSTACK-GPT")
     st.markdown("---")
 
 if not openai_api_key:
-    st.warning("Please enter your OpenAI API Key.")
+    st.warning("Please enter your OpenAI API Key in sidebar to start.")
     st.stop()
 
 client = OpenAI(api_key=openai_api_key)
 
-# API functions
+# Functions using Alpha Vantage endpoints
 def get_ticker(inputs):
-    url = f"https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords={inputs['company_name']}&apikey={alpha_vantage_api_key}"
-    response = requests.get(url).json()
-    matches = response.get("bestMatches", [])
-    return {"ticker": matches[0]["1. symbol"]} if matches else {"error": "Ticker not found."}
+    company_name = inputs['company_name']
+    url = f"https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords={company_name}&apikey={alpha_vantage_api_key}"
+    response = requests.get(url)
+    data = response.json()
+    matches = data.get("bestMatches", [])
+    if matches:
+        return {"ticker": matches[0]["1. symbol"]}
+    else:
+        return {"error": f"Could not find ticker symbol for {company_name}"}
 
 def get_income_statement(inputs):
-    url = f"https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol={inputs['ticker']}&apikey={alpha_vantage_api_key}"
-    response = requests.get(url).json()
-    return response.get("annualReports", {"error": "No income statement data."})
+    ticker = inputs['ticker']
+    url = f"https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol={ticker}&apikey={alpha_vantage_api_key}"
+    response = requests.get(url)
+    data = response.json()
+    if "annualReports" in data:
+        return data["annualReports"]
+    else:
+        return {"error": "No income statement data found."}
 
 def get_balance_sheet(inputs):
-    url = f"https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol={inputs['ticker']}&apikey={alpha_vantage_api_key}"
-    response = requests.get(url).json()
-    return response.get("annualReports", {"error": "No balance sheet data."})
+    ticker = inputs['ticker']
+    url = f"https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol={ticker}&apikey={alpha_vantage_api_key}"
+    response = requests.get(url)
+    data = response.json()
+    if "annualReports" in data:
+        return data["annualReports"]
+    else:
+        return {"error": "No balance sheet data found."}
 
 def get_daily_stock_performance(inputs):
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={inputs['ticker']}&apikey={alpha_vantage_api_key}"
-    response = requests.get(url).json()
-    return response.get("Time Series (Daily)", {"error": "No stock price data."})
+    ticker = inputs['ticker']
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={ticker}&apikey={alpha_vantage_api_key}"
+    response = requests.get(url)
+    data = response.json()
+    if "Time Series (Daily)" in data:
+        return data["Time Series (Daily)"]
+    else:
+        return {"error": "No stock price data found."}
 
-# Tools for Assistants v2
+# Define tools/functions for OpenAI assistant
+
 tools = [
     {
         "type": "function",
-        "function": {
-            "name": "get_ticker",
-            "description": "Get ticker symbol from company name.",
-            "parameters": {
-                "type": "object",
-                "properties": {"company_name": {"type": "string"}},
-                "required": ["company_name"]
-            }
+        "name": "get_ticker",
+        "description": "Get ticker symbol from company name",
+        "parameters": {
+            "type": "object",
+            "properties": {"company_name": {"type": "string"}},
+            "required": ["company_name"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_income_statement",
-            "description": "Get income statement data for ticker.",
-            "parameters": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"]
-            }
+        "name": "get_income_statement",
+        "description": "Get income statement data for ticker",
+        "parameters": {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_balance_sheet",
-            "description": "Get balance sheet data for ticker.",
-            "parameters": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"]
-            }
+        "name": "get_balance_sheet",
+        "description": "Get balance sheet data for ticker",
+        "parameters": {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_daily_stock_performance",
-            "description": "Get daily stock price data.",
-            "parameters": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"]
-            }
+        "name": "get_daily_stock_performance",
+        "description": "Get daily stock price data",
+        "parameters": {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"]
         }
     }
 ]
 
-# Session state
+
+# Streamlit chat logic
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "📈 Hello! I am Investor Assistant. Enter a company name and I will analyze whether it's a good investment or not."}
@@ -120,8 +134,7 @@ if "thread_id" not in st.session_state:
     thread = client.threads.create()
     st.session_state.thread_id = thread.id
 
-# Streamlit chat UI
-st.title("📊 Investor Assistant")
+st.title("📊Investor Assistant")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -152,21 +165,20 @@ if user_input := st.chat_input("Ask me about any company"):
         if run_status.status == "requires_action":
             tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
             tool_outputs = []
-
             for tool_call in tool_calls:
-                fn_name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments)
-
-                if fn_name == "get_ticker":
-                    output = get_ticker(args)
-                elif fn_name == "get_income_statement":
-                    output = get_income_statement(args)
-                elif fn_name == "get_balance_sheet":
-                    output = get_balance_sheet(args)
-                elif fn_name == "get_daily_stock_performance":
-                    output = get_daily_stock_performance(args)
+                function_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                
+                if function_name == "get_ticker":
+                    output = get_ticker(arguments)
+                elif function_name == "get_income_statement":
+                    output = get_income_statement(arguments)
+                elif function_name == "get_balance_sheet":
+                    output = get_balance_sheet(arguments)
+                elif function_name == "get_daily_stock_performance":
+                    output = get_daily_stock_performance(arguments)
                 else:
-                    output = {"error": "Unknown function."}
+                    output = {"error": "Unknown function"}
 
                 tool_outputs.append({
                     "tool_call_id": tool_call.id,
@@ -178,7 +190,6 @@ if user_input := st.chat_input("Ask me about any company"):
                 run_id=run.id,
                 tool_outputs=tool_outputs
             )
-
         elif run_status.status == "completed":
             break
 
