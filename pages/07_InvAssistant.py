@@ -76,45 +76,54 @@ def get_daily_stock_performance(inputs):
 tools = [
     {
         "type": "function",
-        "name": "get_ticker",
-        "description": "Get ticker symbol from company name",
-        "parameters": {
-            "type": "object",
-            "properties": {"company_name": {"type": "string"}},
-            "required": ["company_name"]
+        "function": {
+            "name": "get_ticker",
+            "description": "Get ticker symbol from company name",
+            "parameters": {
+                "type": "object",
+                "properties": {"company_name": {"type": "string"}},
+                "required": ["company_name"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_income_statement",
-        "description": "Get income statement data for ticker",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticker": {"type": "string"}},
-            "required": ["ticker"]
+        "function": {
+            "name": "get_income_statement",
+            "description": "Get income statement data for ticker",
+            "parameters": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_balance_sheet",
-        "description": "Get balance sheet data for ticker",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticker": {"type": "string"}},
-            "required": ["ticker"]
+        "function": {
+            "name": "get_balance_sheet",
+            "description": "Get balance sheet data for ticker",
+            "parameters": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_daily_stock_performance",
-        "description": "Get daily stock price data",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticker": {"type": "string"}},
-            "required": ["ticker"]
+        "function": {
+            "name": "get_daily_stock_performance",
+            "description": "Get daily stock price data",
+            "parameters": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"]
+            }
         }
     }
 ]
+
 
 
 # Streamlit chat logic
