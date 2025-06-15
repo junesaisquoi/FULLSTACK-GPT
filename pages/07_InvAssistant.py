@@ -121,7 +121,7 @@ if "messages" not in st.session_state:
     ]
 
 if "assistant_id" not in st.session_state:
-    assistant = client.assistants.create(
+    assistant = client.beta.assistants.create(
         name="Investor Assistant",
         instructions="You analyze companies and recommend whether to invest or not based on financials and stock performance.",
         model="gpt-4o-mini",
