@@ -24,7 +24,10 @@ if not openai_api_key:
     st.warning("Please enter your OpenAI API Key in sidebar to start.")
     st.stop()
 
-client = openai.OpenAI(api_key=openai_api_key)
+client = openai.OpenAI(
+    api_key=openai_api_key,
+    default_headers={"OpenAI-Beta": "assistants=v2"}
+)
 
 # Functions using Alpha Vantage endpoints
 def get_ticker(inputs):
