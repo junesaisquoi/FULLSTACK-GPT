@@ -17,7 +17,7 @@ load_dotenv()
 alpha_vantage_api_key = "ALPHA_VANTAGE_API_KEY"
 
 # Streamlit UI setup
-st.set_page_config(page_title="Investor Assistant", page_icon="📈")
+# st.set_page_config(page_title="Investor Assistant", page_icon="📈")
 
 with st.sidebar:
     openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
