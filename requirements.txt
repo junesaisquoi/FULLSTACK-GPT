@@ -240,3 +240,12 @@ XlsxWriter==3.1.5
 yarl==1.9.2
 yfinance==0.1.96
 zipp==3.16.2
+
+
+openai==1.30.3
+streamlit==1.33.0
+langchain==0.1.16
+python-dotenv
+requests
+
+# trigger rebuild
