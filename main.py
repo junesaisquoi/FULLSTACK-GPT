@@ -1,3 +1,0 @@
-import comm
-
-print(comm)
