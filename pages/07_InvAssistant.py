@@ -1,4 +1,4 @@
-# InvAssistant.py (Alpha Vantage Version)
+# InvAssistant.py (Alpha Vantage Version - Corrected)
 
 import streamlit as st
 import os
@@ -11,7 +11,7 @@ import requests
 load_dotenv()
 
 # Alpha Vantage API Key from .env or Streamlit secrets
-alpha_vantage_api_key = "ALPHA_VANTAGE_API_KEY"
+alpha_vantage_api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # Streamlit UI setup
 st.set_page_config(page_title="Investor Assistant", page_icon="📈")
@@ -70,50 +70,56 @@ def get_daily_stock_performance(inputs):
         return {"error": "No stock price data found."}
 
 # Define tools/functions for OpenAI assistant
-
 tools = [
     {
         "type": "function",
-        "name": "get_ticker",
-        "description": "Get ticker symbol from company name",
-        "parameters": {
-            "type": "object",
-            "properties": {"company_name": {"type": "string"}},
-            "required": ["company_name"]
+        "function": {
+            "name": "get_ticker",
+            "description": "Get ticker symbol from company name",
+            "parameters": {
+                "type": "object",
+                "properties": {"company_name": {"type": "string"}},
+                "required": ["company_name"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_income_statement",
-        "description": "Get income statement data for ticker",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticker": {"type": "string"}},
-            "required": ["ticker"]
+        "function": {
+            "name": "get_income_statement",
+            "description": "Get income statement data for ticker",
+            "parameters": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_balance_sheet",
-        "description": "Get balance sheet data for ticker",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticker": {"type": "string"}},
-            "required": ["ticker"]
+        "function": {
+            "name": "get_balance_sheet",
+            "description": "Get balance sheet data for ticker",
+            "parameters": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_daily_stock_performance",
-        "description": "Get daily stock price data",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticker": {"type": "string"}},
-            "required": ["ticker"]
+        "function": {
+            "name": "get_daily_stock_performance",
+            "description": "Get daily stock price data",
+            "parameters": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"]
+            }
         }
     }
 ]
-
 
 # Streamlit chat logic
 if "messages" not in st.session_state:
@@ -168,7 +174,7 @@ if user_input := st.chat_input("Ask me about any company"):
             for tool_call in tool_calls:
                 function_name = tool_call.function.name
                 arguments = json.loads(tool_call.function.arguments)
-                
+
                 if function_name == "get_ticker":
                     output = get_ticker(arguments)
                 elif function_name == "get_income_statement":
