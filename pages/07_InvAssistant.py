@@ -2,13 +2,9 @@
 import streamlit as st
 import os
 import openai
-from openai import OpenAI
 from dotenv import load_dotenv
 import json
 import requests
-
-st.write("OpenAI SDK version:", openai.__version__)
-
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +24,7 @@ if not openai_api_key:
     st.warning("Please enter your OpenAI API Key in sidebar to start.")
     st.stop()
 
-client = OpenAI(api_key=openai_api_key)
+client = openai.OpenAI(api_key=openai_api_key)
 
 # Functions using Alpha Vantage endpoints
 def get_ticker(inputs):
