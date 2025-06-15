@@ -11,7 +11,7 @@ import requests
 load_dotenv()
 
 # Alpha Vantage API Key from .env or Streamlit secrets
-alpha_vantage_api_key = "ALPHA_VANTAGE_API_KEY"
+alpha_vantage_api_key = st.secrets["ALPHA_VANTAGE_API_KEY"]
 
 # Streamlit UI setup
 st.set_page_config(page_title="Investor Assistant", page_icon="📈")
