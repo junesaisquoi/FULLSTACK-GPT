@@ -1,11 +1,14 @@
 # InvAssistant.py (Alpha Vantage Version)
-
 import streamlit as st
 import os
+import openai
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
 import requests
+
+st.write("OpenAI SDK version:", openai.__version__)
+
 
 # Load environment variables
 load_dotenv()
