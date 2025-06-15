@@ -142,7 +142,7 @@ if "assistant_id" not in st.session_state:
     st.session_state.assistant_id = assistant.id
 
 if "thread_id" not in st.session_state:
-    thread = client.threads.create()
+    thread = client.beta.threads.create()
     st.session_state.thread_id = thread.id
 
 st.title("📊Investor Assistant")
@@ -156,19 +156,19 @@ if user_input := st.chat_input("Ask me about any company"):
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    client.threads.messages.create(
+    client.beta.threads.messages.create(
         thread_id=st.session_state.thread_id,
         role="user",
         content=user_input
     )
 
-    run = client.threads.runs.create(
+    run = client.beta.threads.runs.create(
         thread_id=st.session_state.thread_id,
         assistant_id=st.session_state.assistant_id
     )
 
     while True:
-        run_status = client.threads.runs.retrieve(
+        run_status = client.beta.threads.runs.retrieve(
             thread_id=st.session_state.thread_id,
             run_id=run.id
         )
@@ -196,7 +196,7 @@ if user_input := st.chat_input("Ask me about any company"):
                     "output": json.dumps(output)
                 })
 
-            client.threads.runs.submit_tool_outputs(
+            client.beta.threads.runs.submit_tool_outputs(
                 thread_id=st.session_state.thread_id,
                 run_id=run.id,
                 tool_outputs=tool_outputs
@@ -204,7 +204,7 @@ if user_input := st.chat_input("Ask me about any company"):
         elif run_status.status == "completed":
             break
 
-    messages = client.threads.messages.list(thread_id=st.session_state.thread_id)
+    messages = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
     response = messages.data[0].content[0].text.value
     st.session_state.messages.append({"role": "assistant", "content": response})
     with st.chat_message("assistant"):
